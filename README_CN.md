@@ -4,13 +4,11 @@
 ## 一、编译命令
 
 1. 编译源码
-  - make 
-
+  - make
 1. 安装驱动
-  - sudo make install 
-
+  - sudo make install
 1. 卸载驱动
-  - sudo make clean 
+  - sudo make clean
 
 ## 二、设置和获取消息
 
@@ -18,22 +16,18 @@
   - echo "SetSmartFanMode,1/2/3/255" | sudo tee /proc/acpi/legion_go_call
 - 读取设置模式
   - echo "GetSmartFanMode" | sudo tee /proc/acpi/legion_go_call
-
 1. 设置SPL
   - echo "SetSPL,X" | sudo tee /proc/acpi/legion_go_call
 - 读取SPL
   - echo "GetSPL" | sudo tee /proc/acpi/legion_go_call
-
 1. 设置sPPT
   - echo "SetSPPT,X" | sudo tee /proc/acpi/legion_go_call
 - 读取sPPT
   - echo "GetSPPT" | sudo tee /proc/acpi/legion_go_call
-
 1. 设置fPPT
   - echo "SetFPPT,X" | sudo tee /proc/acpi/legion_go_call
 - 读取fPPT
   - echo "GetFPPT" | sudo tee /proc/acpi/legion_go_call
-
 1. 获最后设置的参数，且只能读取最后设置的参数
   - sudo cat /proc/acpi/legion_go_call
 - 返回值
