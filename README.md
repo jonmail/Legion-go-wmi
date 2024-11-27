@@ -5,26 +5,36 @@ This driver is specifically designed for Lenovo's Legion Go S platform, primaril
 
 1. Compile Source Code
   - make
-1. Install Driver
+
+2. Install Driver
   - sudo make install
-1. Uninstall Driver
+
+3. Uninstall Driver
   - sudo make clean
 
 ## Settings and Read Information
 
-1. Mode
+1. Set Mode
   - echo "SetSmartFanMode,1/2/3/255" | sudo tee /proc/acpi/legion_go_call
+- Read Mode
   - echo "GetSmartFanMode" | sudo tee /proc/acpi/legion_go_call
-1. SPL
+
+2. Set SPL
   - echo "SetSPL,X" | sudo tee /proc/acpi/legion_go_call
+- Read SPL
   - echo "GetSPL" | sudo tee /proc/acpi/legion_go_call
-1. sPPT
+
+3. Set sPPT
   - echo "SetSPPT,X" | sudo tee /proc/acpi/legion_go_call
+- Read sPPT
   - echo "GetSPPT" | sudo tee /proc/acpi/legion_go_call
-1. fPPT
+
+4. Set fPPT
   - echo "SetFPPT,X" | sudo tee /proc/acpi/legion_go_call
+- Read fPPT
   - echo "GetFPPT" | sudo tee /proc/acpi/legion_go_call
-1. Read the Latest Settings (only the latest settings can be read)
+
+5. Read the Latest Settings (only the latest settings can be read)
   - sudo cat /proc/acpi/legion_go_call
   - Return Values
     - GetSmartFanMode,X
