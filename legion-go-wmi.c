@@ -548,5 +548,5 @@ MODULE_DEVICE_TABLE(wmi, legion_go_wmi_id_table);
 
 MODULE_DESCRIPTION("Lenovo Legion Go WMI Driver");
 MODULE_AUTHOR("zhixin zhang<zhangzx36@lenovo.com>");
-MODULE_AUTHOR("Derek<derekjohn.clark@gmail.com>"); 
+MODULE_AUTHOR("Derek J. Clark <derekjohn.clark@gmail.com>");
 MODULE_LICENSE("GPL");
