@@ -57,27 +57,48 @@ $ pwd
 /sys/class/firmware-attributes/lenovo-legion-wmi
 $ tree
 .
-├── attributes
-│   ├── cpu_temp
-│   │   └── current_value
-│   ├── ppt_apu_spl
-│   │   └── current_value
-│   ├── ppt_fppt
-│   │   └── current_value
-│   ├── ppt_pl1_spl
-│   │   └── current_value
-│   └── ppt_pl2_sppt
-│       └── current_value
-├── power
-│   ├── autosuspend_delay_ms
-│   ├── control
-│   ├── runtime_active_time
-│   ├── runtime_status
-│   └── runtime_suspended_time
-├── subsystem -> ../../../../class/firmware-attributes
-└── uevent
+├── cpu_temp
+│   ├── current_value
+│   ├── default_value
+│   ├── display_name
+│   ├── max_value
+│   ├── min_value
+│   ├── scalar_increment
+│   └── type
+├── ppt_apu_spl
+│   ├── current_value
+│   ├── default_value
+│   ├── display_name
+│   ├── max_value
+│   ├── min_value
+│   ├── scalar_increment
+│   └── type
+├── ppt_fppt
+│   ├── current_value
+│   ├── default_value
+│   ├── display_name
+│   ├── max_value
+│   ├── min_value
+│   ├── scalar_increment
+│   └── type
+├── ppt_pl1_spl
+│   ├── current_value
+│   ├── default_value
+│   ├── display_name
+│   ├── max_value
+│   ├── min_value
+│   ├── scalar_increment
+│   └── type
+└── ppt_pl2_sppt
+    ├── current_value
+    ├── default_value
+    ├── display_name
+    ├── max_value
+    ├── min_value
+    ├── scalar_increment
+    └── type
 
-9 directories, 11 files
+6 directories, 35 files
 ```
 
-**TODO** Finish these. Planned paths include (for each attribute) min/max/defualt_value, scalar_increment, type, display_name.
+**TODO** Finish these. Currently reading or writing to any attribute related to value crashes the driver.
