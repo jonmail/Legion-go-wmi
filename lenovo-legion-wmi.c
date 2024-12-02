@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Lenovo Legion WMI interface driver. The Lenovo Legion WMI interface is
- * broken up into multiple GUID interfaces that require cross-references 
- * between GUID's for some functionality. The "Custom Mode" interface is a 
+ * broken up into multiple GUID interfaces that require cross-references
+ * between GUID's for some functionality. The "Custom Mode" interface is a
  * legacy interface for managing and displaying CPU & GPU power and hwmon
- * settings and readings. The "Other Mode" interface is a modern interface 
+ * settings and readings. The "Other Mode" interface is a modern interface
  * that replaces and extends the "Custom Mode" interface. The "GameZone"
  * interface adds advanced power and tuning features such as fan profiles
  * and overclocking. The "Lighting" interface adds control of various status
- * lights related to different hardware components. There are also three WMI 
+ * lights related to different hardware components. There are also three WMI
  * data interfaces that allow for probing the hardware to determine if features
  * are supported, and if so what operational limits exist for those attributes.
  * This file acts as a repository of common functionalities.
@@ -49,7 +49,7 @@ int lenovo_legion_evaluate_method_2(struct wmi_device *wdev, u8 instance,
 					    &output);
 
 	if (ret) {
-		printk("Attempt to get method_id %u value failed with error: %u\n",
+		pr_err("Attempt to get method_id %u value failed with error: %u\n",
 		       method_id, ret);
 		return ret;
 	}
