@@ -1,28 +1,108 @@
-obj-m := legion-go-wmi.o
+# For building for the current running version of Linux
+ifndef TARGET
+TARGET = $(shell uname -r)
+endif
+# Or specific version
+#TARGET = 2.6.33.5
 
-KVER := $(shell uname -r)
-KDIR := /lib/modules/$(KVER)/build
-PWD := $(shell pwd)
-INSTALL	:= install
+KERNEL_MODULES = /lib/modules/$(TARGET)
 
-SYMBOL_FILE := Module.symvers
+ifneq ("","$(wildcard /usr/src/linux-headers-$(TARGET)/*)")
+# Ubuntu
+KERNEL_BUILD = /usr/src/linux-headers-$(TARGET)
+else
+ifneq ("","$(wildcard /usr/src/kernels/$(TARGET)/*)")
+# Fedora
+KERNEL_BUILD = /usr/src/kernels/$(TARGET)
+else
+KERNEL_BUILD = $(KERNEL_MODULES)/build
+endif
+endif
 
-EXTRA_CFLAGS += -O2
+# SYSTEM_MAP = $(KERNEL_BUILD)/System.map
+ifneq ("","$(wildcard /boot/System.map-$(TARGET))")
+SYSTEM_MAP = /boot/System.map-$(TARGET)
+else
+# Arch
+SYSTEM_MAP = /proc/kallsyms
+endif
 
-ccflags-y += -D__CHECK_ENDIAN__
+DRIVER := lenovo-legion-wmi
+ifneq ("","$(wildcard .git/*)")
+DRIVER_VERSION := $(shell git describe --long --tags | sed s/\-/\./g )
+else
+ifneq ("", "$(wildcard VERSION)")
+DRIVER_VERSION := $(shell cat VERSION)
+else
+DRIVER_VERSION := unknown
+endif
+endif
 
-default:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+# DKMS
+DKMS_ROOT_PATH=/usr/src/$(DRIVER)-$(DRIVER_VERSION)
+MODPROBE_OUTPUT=$(shell lsmod | grep ayaneo-platform)
+
+# Directory below /lib/modules/$(TARGET)/kernel into which to install
+# the module:
+MOD_SUBDIR = drivers/platform/x86
+MODDESTDIR=$(KERNEL_MODULES)/kernel/$(MOD_SUBDIR)
+
+obj-m = firmware_attributes_class.o lenovo-legion-wmi.o lenovo-legion-wmi-gamezone.o lenovo-legion-wmi-other.o
+obj-ko := firmware_attributes_class.ko lenovo-legion-wmi.ko lenovo-legion-wmi-gamezone.ko lenovo-legion-wmi-other.ko
+
+MAKEFLAGS += --no-print-directory
+
+ifneq ("","$(wildcard $(MODDESTDIR)/*.ko.gz)")
+COMPRESS_GZIP := y
+endif
+ifneq ("","$(wildcard $(MODDESTDIR)/*.ko.xz)")
+COMPRESS_XZ := y
+endif
+
+
+.PHONY: all install modules modules_install clean dkms dkms_clean
+
+all: modules
+
+
+# Targets for running make directly in the external module directory:
+
+LEGION_WMI_CFLAGS=-LEGION_WMI_DRIVER_VERSION='\"$(DRIVER_VERSION)\"'
+
+modules:
+	@$(MAKE) EXTRA_CFLAGS="$(LEGION_WMI_CFLAGS)" -C $(KERNEL_BUILD) M=$(CURDIR) $@
 
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
-	rm -f /lib/modules/$(KVER)/drivers/platform/x86/legion-go-wmi.ko
-	modprobe -r legion-go-wmi
-
-modules_install:
-	$(INSTALL) -d /lib/modules/$(KVER)/drivers/platform/x86/
-	$(INSTALL) -m 644 legion-go-wmi.ko /lib/modules/$(KVER)/drivers/platform/x86/
+	@$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR) $@
 
 install: modules_install
-	depmod -a $(KVER)
-	modprobe legion-go-wmi
+
+modules_install:
+	mkdir -p $(MODDESTDIR)
+	cp $(DRIVER).ko $(MODDESTDIR)/
+ifeq ($(COMPRESS_GZIP), y)
+	@gzip -f $(MODDESTDIR)/$(DRIVER).ko
+endif
+ifeq ($(COMPRESS_XZ), y)
+	@xz -f $(MODDESTDIR)/$(DRIVER).ko
+endif
+	depmod -a -F $(SYSTEM_MAP) $(TARGET)
+
+dkms:
+	@sed -i -e '/^PACKAGE_VERSION=/ s/=.*/=\"$(DRIVER_VERSION)\"/' dkms.conf
+	@echo "$(DRIVER_VERSION)" >VERSION
+	@mkdir -p $(DKMS_ROOT_PATH)
+	@cp `pwd`/dkms.conf $(DKMS_ROOT_PATH)
+	@cp `pwd`/VERSION $(DKMS_ROOT_PATH)
+	@cp `pwd`/Makefile $(DKMS_ROOT_PATH)
+	@cp `pwd`/ayaneo-platform.c $(DKMS_ROOT_PATH)
+	@dkms add -m $(DRIVER) -v $(DRIVER_VERSION)
+	@dkms build -m $(DRIVER) -v $(DRIVER_VERSION) --kernelsourcedir=$(KERNEL_BUILD)
+	@dkms install --force -m $(DRIVER) -v $(DRIVER_VERSION)
+
+dkms_clean:
+	@if [ ! -z "$(MODPROBE_OUTPUT)" ]; then \
+		rmmod $(DRIVER);\
+	fi
+	@dkms remove -m $(DRIVER) -v $(DRIVER_VERSION) --all
+	@rm -rf $(DKMS_ROOT_PATH)
