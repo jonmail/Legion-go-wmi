@@ -37,31 +37,10 @@ static const struct class *fw_attr_class;
 static struct other_method_wmi om_wmi = { .mutex = __MUTEX_INITIALIZER(
 						  om_wmi.mutex) };
 
-struct om_attribute_id {
-	u32 type_id : 16;
-	u32 feature_id : 8;
-	u32 device_id : 8;
-} __packed;
-
 struct other_method_attr_group {
 	const struct attribute_group *attr_group;
 	char *data_guid;
 };
-
-// static struct capability_data_00 {
-//	u32 ids;
-//	u32 capability;
-//	u32 default_value;
-// };
-//
-// static struct capability_data_01 {
-//	u32 ids;
-//	u32 capability;
-//	u32 default_value;
-//	u32 step;
-//	u32 min_value;
-//	u32 max_value;
-// };
 
 static int other_method_fan_profile_get(int *sel_prof)
 {
@@ -98,11 +77,10 @@ static int other_method_fan_profile_get(int *sel_prof)
  *
  * Returns: Either count, or an error.
  */
-static ssize_t attr_current_value_store(struct kobject *kobj,
-					struct kobj_attribute *attr,
-					const char *buf, size_t count,
-					u32 *store_value, u8 device_id,
-					u8 feature_id)
+ssize_t attr_current_value_store(struct kobject *kobj,
+				 struct kobj_attribute *attr, const char *buf,
+				 size_t count, u32 *store_value, u8 device_id,
+				 u8 feature_id)
 {
 	pr_info("lenovo_legion_wmi_other: attr_current_value_store start\n");
 	u32 value;
@@ -112,9 +90,7 @@ static ssize_t attr_current_value_store(struct kobject *kobj,
 	int sel_prof; /* Current fan profile mode */
 	int err;
 	int retval;
-	struct wmi_device *wdev;
-
-	wdev = drvdata.om_wmi->wdev;
+	struct wmi_device *wdev = drvdata.om_wmi->wdev;
 
 	err = other_method_fan_profile_get(&sel_prof);
 
@@ -176,16 +152,14 @@ static ssize_t attr_current_value_store(struct kobject *kobj,
  *
  * Returns: Either count, or an error.
  */
-static ssize_t attr_current_value_show(struct kobject *kobj,
-				       struct kobj_attribute *attr, char *buf,
-				       u8 device_id, u8 feature_id)
+ssize_t attr_current_value_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf,
+				u8 device_id, u8 feature_id)
 {
 	int sel_prof; /* Current fan profile mode */
 	int err;
 	int retval;
-	struct wmi_device *wdev;
-
-	wdev = drvdata.om_wmi->wdev;
+	struct wmi_device *wdev = drvdata.om_wmi->wdev;
 
 	err = other_method_fan_profile_get(&sel_prof);
 
@@ -211,7 +185,7 @@ static ssize_t attr_current_value_show(struct kobject *kobj,
 }
 
 /**
- * attr_cap_data_show() - Get the value of the given attributes spicified
+ * attr_cap_data_show() - Get the value of the attributes spicified
  * property from LENOVO_CAPABILITY_DATA_01
  * @kobj: Pointer to the driver object.
  * @kobj_attribute: Pointer to the attribute calling this function.
@@ -219,6 +193,7 @@ static ssize_t attr_current_value_show(struct kobject *kobj,
  * @retval: Pointer to returned data.
  * @device_id: The WMI functions Device ID to use.
  * @feature_id: The WMI functions Feature ID to use.
+ * @prop: The property of this attribute to be read.
  *
  * This function is intended to be generic so it can be called from any "_show"
  * attribute which works only with integers.
@@ -227,52 +202,72 @@ static ssize_t attr_current_value_show(struct kobject *kobj,
  *
  * Returns: Either count, or an error.
  */
-static ssize_t attr_cap_data_show(struct kobject *kobj,
-				  struct kobj_attribute *attr, char *buf,
-				  u8 device_id, u8 feature_id)
+ssize_t attr_cap_data_show(struct kobject *kobj, struct kobj_attribute *attr,
+			   char *buf, u8 device_id, u8 feature_id,
+			   enum attribute_property prop)
 {
-	int mode; /* Current fan profile mode */
-	int err = other_method_fan_profile_get(&mode);
+	pr_info("attr_cap_data_show for property %d\n", prop);
+	int sel_prof; /* Current fan profile mode */
+	int err;
 	int retval;
-	struct wmi_device *wdev = drvdata.om_wmi->wdev;
+	struct capability_data_01 cap_data;
 
+	err = other_method_fan_profile_get(&sel_prof);
 	if (err) {
 		pr_err("Error getting gamezone fan profile.\n");
 		return err;
 	}
 
+	pr_info("Got fan mode: %d\n", sel_prof);
+
 	// Construct the WMI attribute id from the given args.
-	struct om_attribute_id attribute_id = { device_id, feature_id,
-						mode << 8 };
+	struct om_attribute_id attribute_id = { sel_prof << 8, feature_id,
+						device_id };
 
-	err = lenovo_legion_evaluate_method_1(wdev, 0x0,
-					      WMI_METHOD_ID_VALUE_GET,
-					      *(int *)&attribute_id, &retval);
-
+	err = capdata_01_wmi_get(attribute_id, &cap_data);
 	if (err) {
-		pr_err("Error getting attribute");
-		return err;
+		pr_err("Got no data YO!");
 	}
+	pr_info("Got Capability Data: ");
+	pr_info("Step: %d, ", cap_data.step);
+	pr_info("Default Value: %d, ", cap_data.default_value);
+	pr_info("Max Value: %d, ", cap_data.max_value);
+	pr_info("Min Value: %d\n", cap_data.min_value);
 
-	sysfs_notify(kobj, NULL, attr->attr.name);
-	return 0;
+	switch (prop) {
+	case DEFAULT_VAL:
+		retval = cap_data.default_value;
+		break;
+	case MAX_VAL:
+		retval = cap_data.max_value;
+		break;
+	case MIN_VAL:
+		retval = cap_data.min_value;
+		break;
+	case STEP_VAL:
+		retval = cap_data.step;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return sysfs_emit(buf, "%u\n", retval);
 }
 
 /* Simple attribute creation */
 ATTR_GROUP_LL_TUNABLE(ppt_pl1_spl, "ppt_pl1_spl", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_CPU_SPL, 1,
+		      WMI_FEATURE_ID_CPU_SPL,
 		      "Set the CPU sustained power limit");
 ATTR_GROUP_LL_TUNABLE(ppt_pl2_sppt, "ppt_pl2_sppt", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_CPU_SPPT, 1,
+		      WMI_FEATURE_ID_CPU_SPPT,
 		      "Set the CPU slow package power tracking limit");
 ATTR_GROUP_LL_TUNABLE(ppt_fppt, "ppt_fppt", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_CPU_FPPT, 1,
+		      WMI_FEATURE_ID_CPU_FPPT,
 		      "Set the CPU fast package power tracking limit");
 ATTR_GROUP_LL_TUNABLE(cpu_temp, "cpu_temp", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_CPU_TEMP, 1,
+		      WMI_FEATURE_ID_CPU_TEMP,
 		      "Set the CPU thermal control limit");
 ATTR_GROUP_LL_TUNABLE(ppt_apu_spl, "ppt_apu_spl", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_APU_SPL, 1,
+		      WMI_FEATURE_ID_APU_SPL,
 		      "Set the APU sustained power limit");
 
 static const struct other_method_attr_group other_method_attr_groups[] = {
@@ -390,6 +385,7 @@ module_wmi_driver(other_method_wmi_driver);
 
 MODULE_IMPORT_NS(LL_WMI);
 MODULE_IMPORT_NS(GZ_WMI);
+MODULE_IMPORT_NS(CAPDATA_WMI);
 MODULE_DEVICE_TABLE(wmi, other_method_wmi_id_table);
 MODULE_AUTHOR("Derek J. Clark <derekjohn.clark@gmail.com>");
 MODULE_DESCRIPTION("Lenovo Legion Other Method Driver");
