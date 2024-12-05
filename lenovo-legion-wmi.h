@@ -8,8 +8,7 @@
  * that replaces or extends the "Custom Mode" interface methods. The "GameZone"
  * interface adds advanced features such as fan profiles and overclocking.
  * The "Lighting" interface adds control of various status lights related to
- * different hardware components. This driver acts as a repository of common
- * functinality as well as a link between the various GUID methods.
+ * different hardware components. 
  *
  * Copyright(C) 2024 Derek J. Clark <derekjohn.clark@gmail.com>
  *
@@ -18,31 +17,20 @@
 #ifndef _LENOVO_LEGION_WMI_H_
 #define _LENOVO_LEGION_WMI_H_
 
-#include <linux/acpi.h>
 #include <linux/mutex.h>
-#include <linux/platform_device.h>
 #include <linux/platform_profile.h>
 #include <linux/types.h>
 #include <linux/wmi.h>
 
 #define DRIVER_NAME "lenovo-legion-wmi"
 
-/* WMI Interface GUIDs */
-#define LENOVO_CAPABILITY_DATA_00_GUID "362A3AFE-3D96-4665-8530-96DAD5BB300E"
-#define LENOVO_CAPABILITY_DATA_01_GUID "7A8F5407-CB67-4D6E-B547-39B3BE018154"
-#define LENOVO_CAPABILITY_DATA_02_GUID "BBF1F790-6C2F-422B-BC8C-4E7369C7F6AB"
-#define LENOVO_GAMEZONE_GUID "887B54E3-DDDC-4B2C-8B88-68A26A8835D0"
-#define LENOVO_OTHER_METHOD_GUID "DC2A8805-3A8C-41BA-A6F7-092E0089CD3B"
-
 /* Device IDs */
 #define WMI_DEVICE_ID_CPU 0x01
 
-/* Device 0x01 feature IDs */
+/* CPU feature IDs */
 #define WMI_FEATURE_ID_CPU_SPPT 0x01 /* Short Term Power Limit */
 #define WMI_FEATURE_ID_CPU_SPL 0x02 /* Peak Power Limit */
 #define WMI_FEATURE_ID_CPU_FPPT 0x03 /* Long Term Power Limit */
-#define WMI_FEATURE_ID_CPU_TEMP 0x04 /* CPU Thermal Control */
-#define WMI_FEATURE_ID_APU_SPL 0x05 /* APU Slow Power Limit */ // Intel?
 
 /* Method IDs */
 #define WMI_METHOD_ID_VALUE_GET 17 /* Other Method Getter */
@@ -101,14 +89,8 @@ enum attribute_property {
 	SUPPORTED,
 };
 
-// static struct capability_data_00 {
-//	u32 ids;
-//	u32 capability;
-//	u32 default_value;
-// };
-//
-static struct capability_data_01 {
-	u32 ids;
+struct capability_data_01 {
+	u32 id;
 	u32 capability;
 	u32 default_value;
 	u32 step;
@@ -116,12 +98,68 @@ static struct capability_data_01 {
 	u32 max_value;
 } __packed;
 
+static int lenovo_legion_evaluate_method(struct wmi_device *wdev, u8 instance,
+					 u32 method_id, struct acpi_buffer *in,
+					 struct acpi_buffer *out)
+{
+	acpi_status status;
+	status = wmidev_evaluate_method(wdev, instance, method_id, in, out);
+
+	if (ACPI_FAILURE(status)) {
+		printk("Failed to read current platform profile\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
 int lenovo_legion_evaluate_method_2(struct wmi_device *wdev, u8 instance,
 				    u32 method_id, u32 arg0, u32 arg1,
 				    u32 *retval);
 
+int lenovo_legion_evaluate_method_2(struct wmi_device *wdev, u8 instance,
+				    u32 method_id, u32 arg0, u32 arg1,
+				    u32 *retval)
+{
+	int ret;
+	uint32_t temp_val;
+	struct wmi_method_args args = { arg0, arg1 };
+	struct acpi_buffer input = { (acpi_size)sizeof(args), &args };
+	struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
+	union acpi_object *ret_obj = NULL;
+
+	ret = lenovo_legion_evaluate_method(wdev, instance, method_id, &input,
+					    &output);
+
+	if (ret) {
+		pr_err("Attempt to get method_id %u value failed with error: %u\n",
+		       method_id, ret);
+		return ret;
+	}
+
+	if (retval) {
+		ret_obj = (union acpi_object *)output.pointer;
+		if (ret_obj && ret_obj->type == ACPI_TYPE_INTEGER) {
+			temp_val = (u32)ret_obj->integer.value;
+		}
+
+		*retval = temp_val;
+	}
+
+	kfree(ret_obj);
+
+	return 0;
+}
+
 int lenovo_legion_evaluate_method_1(struct wmi_device *wdev, u8 instance,
 				    u32 method_id, u32 arg0, u32 *retval);
+
+int lenovo_legion_evaluate_method_1(struct wmi_device *wdev, u8 instance,
+				    u32 method_id, u32 arg0, u32 *retval)
+{
+	return lenovo_legion_evaluate_method_2(wdev, instance, method_id, arg0,
+					       0, retval);
+}
 
 int capdata_01_wmi_get(struct om_attribute_id attr_id,
 		       struct capability_data_01 *cap_data);
@@ -176,23 +214,22 @@ static ssize_t int_type_show(struct kobject *kobj, struct kobj_attribute *attr,
 		__LL_ATTR_RO(_attrname, _prop)
 
 /* Attribute current_value show/store */
-#define __LL_TUNABLE_RW(_attrname, _dev_id, _feat_id)                       \
-	static ssize_t _attrname##_current_value_store(                     \
-		struct kobject *kobj, struct kobj_attribute *attr,          \
-		const char *buf, size_t count)                              \
-	{                                                                   \
-		return attr_current_value_store(                            \
-			kobj, attr, buf, count,                             \
-			&om_wmi.ll_tunables->_attrname, _dev_id, _feat_id); \
-	}                                                                   \
-	static ssize_t _attrname##_current_value_show(struct kobject *kobj, \ 
-                                            struct kobj_attribute *attr,    \
-						      char *buf)            \
-	{                                                                   \
-		return attr_current_value_show(kobj, attr, buf, _dev_id,    \
-					       _feat_id);                   \
-	}                                                                   \
-	static struct kobj_attribute attr_##_attrname##_current_value =     \
+#define __LL_TUNABLE_RW(_attrname, _dev_id, _feat_id)                         \
+	static ssize_t _attrname##_current_value_store(                       \
+		struct kobject *kobj, struct kobj_attribute *attr,            \
+		const char *buf, size_t count)                                \
+	{                                                                     \
+		return attr_current_value_store(                              \
+			kobj, attr, buf, count,                               \
+			&om_wmi.ll_tunables->_attrname, _dev_id, _feat_id);   \
+	}                                                                     \
+	static ssize_t _attrname##_current_value_show(                        \
+		struct kobject *kobj, struct kobj_attribute *attr, char *buf) \
+	{                                                                     \
+		return attr_current_value_show(kobj, attr, buf, _dev_id,      \
+					       _feat_id);                     \
+	}                                                                     \
+	static struct kobj_attribute attr_##_attrname##_current_value =       \
 		__LL_ATTR_RW(_attrname, current_value);
 
 /* Attribute property show only */
@@ -233,8 +270,3 @@ static ssize_t int_type_show(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 #endif /* !_LENOVO_LEGION_WMI_H_ */
-
-/*
-
-
-*/

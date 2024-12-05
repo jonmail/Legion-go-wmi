@@ -10,6 +10,8 @@
 
 #include "lenovo-legion-wmi.h"
 
+#define LENOVO_GAMEZONE_GUID "887B54E3-DDDC-4B2C-8B88-68A26A8835D0"
+
 static const struct wmi_device_id gamezone_wmi_id_table[] = {
 	{ LENOVO_GAMEZONE_GUID, NULL }, /* LENOVO_GAMEZONE_DATA */
 	{}
@@ -49,27 +51,20 @@ gamezone_wmi_platform_profile_get(struct platform_profile_handler *pprof,
 
 	switch (sel_prof) {
 	case SMARTFAN_MODE_QUIET:
-		pr_info("lenovo_legion_wmi_gamezone: Current platform profile: QUIET\n");
 		*profile = PLATFORM_PROFILE_QUIET;
 		break;
 	case SMARTFAN_MODE_BALANCED:
-		pr_info("lenovo_legion_wmi_gamezone: Current platform profile: BALANCED\n");
 		*profile = PLATFORM_PROFILE_BALANCED;
 		break;
 	case SMARTFAN_MODE_PERFORMANCE:
-		pr_info("lenovo_legion_wmi_gamezone: Current platform profile: PERFORMANCE\n");
 		*profile = PLATFORM_PROFILE_PERFORMANCE;
 		break;
 	case SMARTFAN_MODE_CUSTOM:
-		pr_info("lenovo_legion_wmi_gamezone: Current platform profile: CUSTOM\n");
-		return -EINVAL;
+		/* *profile = PLATFORM_PROFILE_CUSTOM; */
+		*profile = PLATFORM_PROFILE_BALANCED_PERFORMANCE;
+		break;
 
-		/* Requires new CUSTOM mode in platform_profile */
-		/* *profile = PLATFORM_PROFILE_CUSTOM;
-    break; */
 	default:
-		pr_info("lenovo_legion_wmi_gamezone: Invald platform profile, %u\n",
-			sel_prof);
 		return -EINVAL;
 	}
 	drvdata.gz_wmi->current_profile = *profile;
@@ -93,10 +88,10 @@ gamezone_wmi_platform_profile_set(struct platform_profile_handler *pprof,
 	case PLATFORM_PROFILE_PERFORMANCE:
 		sel_prof = SMARTFAN_MODE_PERFORMANCE;
 		break;
-	/* Requires new CUSTOM mode in platform_profile */
-	/* case PLATFORM_PROFILE_CUSTOM:
-          sel_prof = SMARTFAN_MODE_CUSTOM;
-          break; */
+	case PLATFORM_PROFILE_BALANCED_PERFORMANCE:
+		/* case PLATFORM_PROFILE_CUSTOM: */
+		sel_prof = SMARTFAN_MODE_CUSTOM;
+		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -136,7 +131,7 @@ static int platform_profile_setup(struct gamezone_wmi *gz_wmi)
 	set_bit(PLATFORM_PROFILE_QUIET, gz_wmi->pprof.choices);
 	set_bit(PLATFORM_PROFILE_BALANCED, gz_wmi->pprof.choices);
 	set_bit(PLATFORM_PROFILE_PERFORMANCE, gz_wmi->pprof.choices);
-	/* set_bit(PLATFORM_PROFILE_CUSTOM, gz_wmi->pprof.choices); */
+	set_bit(PLATFORM_PROFILE_BALANCED_PERFORMANCE, gz_wmi->pprof.choices);
 
 	/* Create platform_profile structure and register */
 	err = platform_profile_register(&gz_wmi->pprof);
@@ -147,7 +142,6 @@ static int platform_profile_setup(struct gamezone_wmi *gz_wmi)
 		return err;
 	}
 
-	pr_info("lenovo_legion_wmi_gamezone: Registered platform profile support\n");
 	return 0;
 }
 
@@ -198,7 +192,6 @@ static struct wmi_driver gamezone_wmi_driver = {
 
 module_wmi_driver(gamezone_wmi_driver);
 
-MODULE_IMPORT_NS(LL_WMI);
 MODULE_DEVICE_TABLE(wmi, gamezone_wmi_id_table);
 MODULE_AUTHOR("Derek J. Clark <derekjohn.clark@gmail.com>");
 MODULE_DESCRIPTION("Lenovo GameZone WMI Driver");

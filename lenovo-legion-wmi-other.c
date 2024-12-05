@@ -18,6 +18,8 @@
 
 #include "firmware_attributes_class.h"
 
+#define LENOVO_OTHER_METHOD_GUID "DC2A8805-3A8C-41BA-A6F7-092E0089CD3B"
+
 static const struct wmi_device_id other_method_wmi_id_table[] = {
 	{ LENOVO_OTHER_METHOD_GUID, NULL },
 	{}
@@ -28,8 +30,6 @@ struct ll_tunables {
 	u32 ppt_pl1_spl;
 	u32 ppt_pl2_sppt;
 	u32 ppt_fppt;
-	u32 cpu_temp;
-	u32 ppt_apu_spl;
 };
 
 static const struct class *fw_attr_class;
@@ -82,46 +82,58 @@ ssize_t attr_current_value_store(struct kobject *kobj,
 				 size_t count, u32 *store_value, u8 device_id,
 				 u8 feature_id)
 {
-	pr_info("lenovo_legion_wmi_other: attr_current_value_store start\n");
 	u32 value;
-	int min = 1;
-	int max = 50;
-
 	int sel_prof; /* Current fan profile mode */
 	int err;
-	int retval;
+	struct capability_data_01 cap_data;
 	struct wmi_device *wdev = drvdata.om_wmi->wdev;
 
 	err = other_method_fan_profile_get(&sel_prof);
-
 	if (err) {
 		pr_err("Error getting gamezone fan profile.\n");
-		return err;
+		return -EIO;
+	}
+
+	if (sel_prof != SMARTFAN_MODE_CUSTOM) {
+		pr_warn("lenovo-legion-wmi: Device must be in CUSTOM profile to set tunables.");
+		return -EPERM;
 	}
 
 	err = kstrtouint(buf, 10, &value);
 	if (err) {
 		pr_err("Error converting value to int.\n");
-		return err;
+		return -EIO;
 	}
 
-	// TODO: Get min/max from LENOVO_CAPABILITY_DATA_01
-	if (value < min || value > max) {
-		pr_warn("Value %d is not between %d and %d.\n", value, min,
-			max);
+	/* Construct the attribute id */
+	struct om_attribute_id attr_id = { sel_prof << 8, feature_id,
+					   device_id };
+
+	/* Get min/max from LENOVO_CAPABILITY_DATA_01 */
+	err = capdata_01_wmi_get(attr_id, &cap_data);
+	if (err) {
+		pr_err("Failed to get capability data.\n");
+		return -EIO;
+	}
+	if (cap_data.capability < 1) {
+		pr_err("Capability not supported.\n");
+		return EPERM;
+	}
+
+	/* Check if setting is supported in this mode */
+	if (1 & (cap_data.capability << 2)) {
+		pr_info("capability 2: %d\n", cap_data.capability);
+	}
+
+	if (value < cap_data.min_value || value > cap_data.max_value) {
+		pr_warn("Value %d is not between %d and %d.\n", value,
+			cap_data.min_value, cap_data.max_value);
 		return -EINVAL;
 	}
 
-	// Construct the WMI attribute id from the given args.
-	struct om_attribute_id attribute_id = { sel_prof << 8, feature_id,
-						device_id };
-
 	err = lenovo_legion_evaluate_method_2(wdev, 0x0,
 					      WMI_METHOD_ID_VALUE_SET,
-					      *(int *)&attribute_id, value,
-					      &retval);
-
-	pr_info("lenovo_legion_wmi_other: retval: %d\n", retval);
+					      *(int *)&attr_id, value, NULL);
 
 	if (err) {
 		pr_err("Error setting attribute");
@@ -132,7 +144,6 @@ ssize_t attr_current_value_store(struct kobject *kobj,
 		*store_value = value;
 
 	sysfs_notify(kobj, NULL, attr->attr.name);
-	pr_info("lenovo_legion_wmi_other: attr_current_value_store end\n");
 	return count;
 }
 
@@ -206,7 +217,6 @@ ssize_t attr_cap_data_show(struct kobject *kobj, struct kobj_attribute *attr,
 			   char *buf, u8 device_id, u8 feature_id,
 			   enum attribute_property prop)
 {
-	pr_info("attr_cap_data_show for property %d\n", prop);
 	int sel_prof; /* Current fan profile mode */
 	int err;
 	int retval;
@@ -215,10 +225,8 @@ ssize_t attr_cap_data_show(struct kobject *kobj, struct kobj_attribute *attr,
 	err = other_method_fan_profile_get(&sel_prof);
 	if (err) {
 		pr_err("Error getting gamezone fan profile.\n");
-		return err;
+		return -EIO;
 	}
-
-	pr_info("Got fan mode: %d\n", sel_prof);
 
 	// Construct the WMI attribute id from the given args.
 	struct om_attribute_id attribute_id = { sel_prof << 8, feature_id,
@@ -226,13 +234,9 @@ ssize_t attr_cap_data_show(struct kobject *kobj, struct kobj_attribute *attr,
 
 	err = capdata_01_wmi_get(attribute_id, &cap_data);
 	if (err) {
-		pr_err("Got no data YO!");
+		pr_err("Failed to get capability data.\n");
+		return -EIO;
 	}
-	pr_info("Got Capability Data: ");
-	pr_info("Step: %d, ", cap_data.step);
-	pr_info("Default Value: %d, ", cap_data.default_value);
-	pr_info("Max Value: %d, ", cap_data.max_value);
-	pr_info("Min Value: %d\n", cap_data.min_value);
 
 	switch (prop) {
 	case DEFAULT_VAL:
@@ -263,19 +267,11 @@ ATTR_GROUP_LL_TUNABLE(ppt_pl2_sppt, "ppt_pl2_sppt", WMI_DEVICE_ID_CPU,
 ATTR_GROUP_LL_TUNABLE(ppt_fppt, "ppt_fppt", WMI_DEVICE_ID_CPU,
 		      WMI_FEATURE_ID_CPU_FPPT,
 		      "Set the CPU fast package power tracking limit");
-ATTR_GROUP_LL_TUNABLE(cpu_temp, "cpu_temp", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_CPU_TEMP,
-		      "Set the CPU thermal control limit");
-ATTR_GROUP_LL_TUNABLE(ppt_apu_spl, "ppt_apu_spl", WMI_DEVICE_ID_CPU,
-		      WMI_FEATURE_ID_APU_SPL,
-		      "Set the APU sustained power limit");
 
 static const struct other_method_attr_group other_method_attr_groups[] = {
-	{ &ppt_pl1_spl_attr_group, LENOVO_CAPABILITY_DATA_01_GUID },
-	{ &ppt_pl2_sppt_attr_group, LENOVO_CAPABILITY_DATA_01_GUID },
-	{ &ppt_fppt_attr_group, LENOVO_CAPABILITY_DATA_01_GUID },
-	{ &cpu_temp_attr_group, LENOVO_CAPABILITY_DATA_01_GUID },
-	{ &ppt_apu_spl_attr_group, LENOVO_CAPABILITY_DATA_01_GUID },
+	{ &ppt_pl1_spl_attr_group },
+	{ &ppt_pl2_sppt_attr_group },
+	{ &ppt_fppt_attr_group },
 	{},
 };
 
@@ -351,8 +347,6 @@ static int other_method_wmi_probe(struct wmi_device *wdev, const void *context)
 
 static void other_method_wmi_remove(struct wmi_device *wdev)
 {
-	pr_info("lenovo_legion_wmi_other: Lenovo Other Method WMI remove\n");
-
 	mutex_lock(&om_wmi.mutex);
 
 	kset_unregister(om_wmi.fw_attr_kset);
@@ -361,6 +355,7 @@ static void other_method_wmi_remove(struct wmi_device *wdev)
 
 	mutex_unlock(&om_wmi.mutex);
 
+	pr_info("lenovo_legion_wmi_other: Firmware attributes removed\n");
 	return;
 }
 
@@ -383,7 +378,6 @@ static struct wmi_driver other_method_wmi_driver = {
 
 module_wmi_driver(other_method_wmi_driver);
 
-MODULE_IMPORT_NS(LL_WMI);
 MODULE_IMPORT_NS(GZ_WMI);
 MODULE_IMPORT_NS(CAPDATA_WMI);
 MODULE_DEVICE_TABLE(wmi, other_method_wmi_id_table);

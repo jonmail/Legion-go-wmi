@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * LENOVO_CAPABILITY_DATA_01 WMI data block driver. This interface provides
- * information on a given attribute, including if it is supported by the 
+ * information on tunable attributes, including if it is supported by the 
  * hardware, the default_value, max_value, min_value, and step increment.
- * 
  *
  * Copyright(C) 2024 Derek J. Clark <derekjohn.clark@gmail.com>
  *
  */
 
 #include "lenovo-legion-wmi.h"
+
+#define LENOVO_CAPABILITY_DATA_01_GUID "7A8F5407-CB67-4D6E-B547-39B3BE018154"
 
 static const struct wmi_device_id capdata_01_wmi_id_table[] = {
 	{ LENOVO_CAPABILITY_DATA_01_GUID, NULL },
@@ -23,31 +24,24 @@ int capdata_01_wmi_get(struct om_attribute_id attr_id,
 {
 	union acpi_object *ret_obj;
 	int instance_id;
+	u32 attribute_id = *(int *)&attr_id;
 
-	pr_info("Attribute ID: %d\n", attr_id);
-
-	pr_info("Got attribute data. device_id: %d, mode_id %d, feature_id %d\n",
-		attr_id.device_id, attr_id.mode_id, attr_id.feature_id);
 	//determine the instance ID of this attribute
-	instance_id = (attr_id.feature_id * 5) - 1;
-	switch (attr_id.mode_id) {
-	case 0x0200:
+	instance_id = (attr_id.feature_id * 5) - 5;
+	switch (attr_id.mode_id >> 8) {
+	case SMARTFAN_MODE_BALANCED:
 		instance_id += 1;
 		break;
-	case 0x0300:
+	case SMARTFAN_MODE_PERFORMANCE:
 		instance_id += 2;
 		break;
-	case 0xE000:
+	case SMARTFAN_MODE_CUSTOM:
 		instance_id += 3;
 		break;
-	case 0xFF00:
-		instance_id += 4;
-		break;
-	case 0x0100:
+	case SMARTFAN_MODE_QUIET:
 	default:
 		break;
 	}
-	pr_info("Got instance id: %d\n", instance_id);
 
 	ret_obj = wmidev_block_query(drvdata.cd01_wmi->wdev, instance_id);
 	if (!ret_obj) {
@@ -67,13 +61,15 @@ int capdata_01_wmi_get(struct om_attribute_id attr_id,
 		kfree(ret_obj);
 		return -EINVAL;
 	}
-	for (int i = 0; i < ret_obj->buffer.length; i++) {
-		pr_info("%02X", ret_obj->buffer.pointer[i]);
-	}
-	pr_info("\n");
 
 	memcpy(cap_data, ret_obj->buffer.pointer, ret_obj->buffer.length);
 	kfree(ret_obj);
+
+	if (cap_data->id != attribute_id) {
+		pr_err("Failed to get correct instance from Capability data. Got %08X, expected %08X",
+		       cap_data->id, attribute_id);
+		return -EINVAL;
+	}
 	return 0;
 }
 EXPORT_SYMBOL_NS_GPL(capdata_01_wmi_get, CAPDATA_WMI);
@@ -112,7 +108,6 @@ static struct wmi_driver capdata_01_wmi_driver = {
 
 module_wmi_driver(capdata_01_wmi_driver);
 
-MODULE_IMPORT_NS(LL_WMI);
 MODULE_DEVICE_TABLE(wmi, capdata_01_wmi_id_table);
 MODULE_AUTHOR("Derek J. Clark <derekjohn.clark@gmail.com>");
 MODULE_DESCRIPTION("Lenovo Capability Data 01 WMI Driver");
