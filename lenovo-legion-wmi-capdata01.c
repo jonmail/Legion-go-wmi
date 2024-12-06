@@ -23,51 +23,44 @@ int capdata_01_wmi_get(struct om_attribute_id attr_id,
 		       struct capability_data_01 *cap_data)
 {
 	union acpi_object *ret_obj;
+	int count;
 	int instance_id;
 	u32 attribute_id = *(int *)&attr_id;
 
-	//determine the instance ID of this attribute
-	instance_id = (attr_id.feature_id * 5) - 5;
-	switch (attr_id.mode_id >> 8) {
-	case SMARTFAN_MODE_BALANCED:
-		instance_id += 1;
-		break;
-	case SMARTFAN_MODE_PERFORMANCE:
-		instance_id += 2;
-		break;
-	case SMARTFAN_MODE_CUSTOM:
-		instance_id += 3;
-		break;
-	case SMARTFAN_MODE_QUIET:
-	default:
-		break;
-	}
+	count = wmidev_instance_count(drvdata.cd01_wmi->wdev);
+	for (instance_id = 0; instance_id < count; instance_id++) {
+		ret_obj =
+			wmidev_block_query(drvdata.cd01_wmi->wdev, instance_id);
+		if (!ret_obj) {
+			pr_err("wmidev_block_query failed\n");
+			continue;
+		}
 
-	ret_obj = wmidev_block_query(drvdata.cd01_wmi->wdev, instance_id);
-	if (!ret_obj) {
-		pr_err("wmidev_block_query failed\n");
-		return -ENODEV;
-	}
+		if (ret_obj->type != ACPI_TYPE_BUFFER) {
+			pr_err("wmidev_block_query returned type: %u\n",
+			       ret_obj->type);
+			kfree(ret_obj);
+			continue;
+		}
 
-	if (ret_obj->type != ACPI_TYPE_BUFFER) {
-		pr_err("wmidev_block_query returned type: %u\n", ret_obj->type);
-		kfree(ret_obj);
-		return -EINVAL;
-	}
+		if (ret_obj->buffer.length != sizeof(*cap_data)) {
+			pr_err("buffer length is not correct, got %d\n",
+			       ret_obj->buffer.length);
+			kfree(ret_obj);
+			continue;
+		}
 
-	if (ret_obj->buffer.length > sizeof(*cap_data)) {
-		pr_err("buffer length is not correct, got %d\n",
+		memcpy(cap_data, ret_obj->buffer.pointer,
 		       ret_obj->buffer.length);
 		kfree(ret_obj);
-		return -EINVAL;
+
+		if (cap_data->id != attribute_id) {
+			continue;
+		}
+		break;
 	}
-
-	memcpy(cap_data, ret_obj->buffer.pointer, ret_obj->buffer.length);
-	kfree(ret_obj);
-
-	if (cap_data->id != attribute_id) {
-		pr_err("Failed to get correct instance from Capability data. Got %08X, expected %08X",
-		       cap_data->id, attribute_id);
+	if (cap_data->id == 0) {
+		pr_err("Failed to get capability data\n");
 		return -EINVAL;
 	}
 	return 0;
